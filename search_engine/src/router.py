@@ -1,8 +1,10 @@
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from src.dao import search_by_embedding, get_text_embedding, rewrite_query, qa_stuff
+from src.dao import search_by_embedding, get_text_embedding, rewrite_query, \
+    qa_stuff, check_popularity, check_domain
 from src.contracts import ChatHistory
+from src.config import popular_answers
 # from dao import search_by_embedding, get_text_embedding, rewrite_query, qa_stuff
 # from contracts import ChatHistory
 
@@ -27,18 +29,25 @@ async def search(
         including the metadata information retrieved
         from the database and the "success" key with the value True.
     """
-    # TODO
-    # if user's last content is similar to any of popular - return
-    # use llm? train some model?
+    popularity = await check_popularity(chat_history.history[-1].content)
 
-    # TODO
-    # query rewriting - to make last user message contextualized
+    if popularity != "ordinary":
+        popular_answer = popular_answers[popularity]
+        return JSONResponse(
+            content={"qa_answer": popular_answer, "sources": "popular phrases"} | {"success": True}
+        )
+
     rewrited = await rewrite_query(chat_history.history)
 
-    # TODO
-    # domain classifier - to decide wether to lauch main pipeline
-    # or ask to specify request
-
+    domain = await check_domain(rewrited)
+    if domain == "clarification":
+        return JSONResponse(
+            content={"qa_answer": "Пожалуйста, уточните ваш запрос", "sources": "clarification"} | {"success": True}
+        )
+    elif domain == "not_domain":
+        return JSONResponse(
+            content={"qa_answer": popular_answers["popular_angry"], "sources": "clarification"} | {"success": True}
+        )
     q_emb = await get_text_embedding(rewrited)
 
     result = await search_by_embedding(

@@ -37,17 +37,8 @@ async def get_text_embedding(text):
     return response["query_embedding"]
 
 
-async def rewrite_query(chat_history):
+async def get_llm_answer(history):
     """ """
-
-    lines = "\n".join(
-        [
-            f"{'ПОЛЬЗОВАТЕЛЬ: ' if el.role == 'user' else 'АССИСТЕНТ: '}: {el.content}"
-            for el in chat_history
-        ]
-    )
-    history = [{"role": "user", "content": config.qr_prompt.format(history=lines)}]
-
     async with aiohttp.ClientSession() as session:
         async with session.post(
             f"{os.getenv('NEURAL_URL')}/generate",
@@ -58,8 +49,55 @@ async def rewrite_query(chat_history):
         ) as resp:
             response = await resp.json()
 
-    return json.loads(response["answer"])["answer"]
+    try:
+        answer = json.loads(response["answer"])["answer"]
+    except:
+        # if LLM failed to generate json
+        answer = None
 
+    return answer
+
+
+async def rewrite_query(chat_history):
+    """ """
+
+    lines = "\n".join(
+        [
+            f"{'ПОЛЬЗОВАТЕЛЬ ' if el.role == 'user' else 'АССИСТЕНТ '}: {el.content}"
+            for el in chat_history
+        ]
+    )
+    history = [{"role": "user", "content": config.qr_prompt.format(history=lines)}]
+
+    llm_answer = await get_llm_answer(history)
+
+    if llm_answer:
+        return llm_answer
+
+    return chat_history[0].content
+
+
+async def check_popularity(last_query : str) -> str:
+    """ """
+    history = [{"role": "user", "content": config.popularity_prompt.format(query=last_query)}]
+
+    llm_answer = await get_llm_answer(history)
+
+    if llm_answer:
+        return llm_answer
+    
+    return "not_domain"
+
+async def check_domain(full_query : str) -> str:
+    """ """
+    history = [{"role": "user", "content": config.domain_prompt.format(query=full_query)}]
+
+    llm_answer = await get_llm_answer(history)
+
+    if llm_answer:
+        return llm_answer
+    
+    return "not_domain"
 
 async def qa_stuff(query, passages):
     """ """
